@@ -1,0 +1,21 @@
+[project]
+name = "apigee-mcp"
+version = "0.1.0"
+description = "Apigee Edge Management API as a local FastMCP server"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastmcp>=2.0",
+    "httpx>=0.27",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+apigee-mcp = "apigee_mcp.server:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
