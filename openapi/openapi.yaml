@@ -1193,13 +1193,16 @@ paths:
         AllowDynamicQueryParameters: false
         AllowDynamicFormParameters: false
         IsMultiContentStreaming: false
-  /organizations/{ORG}/userroles/user/permissions:
+  /organizations/{ORG}/userroles/{role_name}/permissions:
     get:
       tags:
       - User Roles
       summary: Get permissions for a role
-      description: ''
+      description: 'Lists permissions for resources associated with the specified role. Optional query parameter `path` filters to a single resource path.'
       operationId: GetPermissionsForARole
+      parameters:
+      - $ref: '#/components/parameters/ORG'
+      - $ref: '#/components/parameters/role_name'
       responses:
         200:
           description: ''
@@ -1791,5 +1794,15 @@ components:
       explode: false
       schema:
         type: string
+    role_name:
+      name: role_name
+      in: path
+      description: 'Built-in or custom role name (for example orgadmin, user, or a custom role)'
+      required: true
+      style: simple
+      explode: false
+      schema:
+        type: string
+      example: orgadmin
 security:
 - httpBasic: []

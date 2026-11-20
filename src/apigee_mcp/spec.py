@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import copy
 import os
+import re
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+_PATH_PARAM_RE = re.compile(r"\{([^}]+)\}")
 
 # Legacy operationIds that are invalid as MCP tool names (also fixed in openapi/openapi.yaml).
 _OPERATION_ID_RENAMES: dict[str, str] = {
@@ -73,7 +76,11 @@ def _inject_org_default(spec: dict[str, Any], org: str) -> None:
             if not isinstance(parameters, list):
                 continue
             for param in parameters:
-                if not isinstance(param, dict) or param.get("name") != "ORG":
+                if not isinstance(param, dict):
+                    continue
+                if _resolve_parameter_name(spec, param) != "ORG":
+                    continue
+                if "$ref" in param:
                     continue
                 schema = param.setdefault("schema", {})
                 if isinstance(schema, dict):
@@ -107,6 +114,75 @@ def _rename_operation_ids(spec: dict[str, Any]) -> None:
                 operation["operationId"] = _OPERATION_ID_RENAMES[op_id]
 
 
+def _resolve_parameter_name(spec: dict[str, Any], param: Any) -> str | None:
+    ref: str | None = None
+    if isinstance(param, dict):
+        raw_ref = param.get("$ref")
+        if isinstance(raw_ref, str):
+            ref = raw_ref
+        else:
+            name = param.get("name")
+            return name if isinstance(name, str) else None
+    elif isinstance(param, str) and param.startswith("#/"):
+        ref = param
+    else:
+        return None
+    if ref and ref.startswith("#/"):
+        ref_key = ref.rsplit("/", 1)[-1]
+        components = spec.get("components") or {}
+        params = components.get("parameters") or {}
+        ref_obj = params.get(ref_key)
+        if isinstance(ref_obj, dict):
+            name = ref_obj.get("name")
+            return name if isinstance(name, str) else None
+    return None
+
+
+def _path_parameter_ref(spec: dict[str, Any], name: str) -> dict[str, Any]:
+    components = spec.setdefault("components", {})
+    params = components.setdefault("parameters", {})
+    if name in params:
+        return {"$ref": f"#/components/parameters/{name}"}
+    return {
+        "name": name,
+        "in": "path",
+        "required": True,
+        "style": "simple",
+        "explode": False,
+        "schema": {"type": "string"},
+    }
+
+
+def _ensure_path_parameters(spec: dict[str, Any]) -> None:
+    """Postman export often omits path params; FastMCP needs them to build requests."""
+    paths = spec.get("paths") or {}
+    for path_template, path_item in paths.items():
+        if not isinstance(path_item, dict):
+            continue
+        path_vars = _PATH_PARAM_RE.findall(path_template)
+        if not path_vars:
+            continue
+        for method, operation in path_item.items():
+            if method.startswith("x-") or not isinstance(operation, dict):
+                continue
+            raw_params = operation.get("parameters")
+            if raw_params is None:
+                raw_params = []
+                operation["parameters"] = raw_params
+            if not isinstance(raw_params, list):
+                continue
+            declared = {
+                n
+                for p in raw_params
+                if (n := _resolve_parameter_name(spec, p)) is not None
+            }
+            for name in path_vars:
+                if name in declared:
+                    continue
+                raw_params.append(_path_parameter_ref(spec, name))
+                declared.add(name)
+
+
 def load_openapi_spec(path: Path | None = None) -> dict[str, Any]:
     spec_path = path or _default_spec_path()
     if not spec_path.is_file():
@@ -118,6 +194,7 @@ def load_openapi_spec(path: Path | None = None) -> dict[str, Any]:
     spec = copy.deepcopy(spec)
     _normalize_response_keys(spec)
     _rename_operation_ids(spec)
+    _ensure_path_parameters(spec)
     org = _configured_org()
     if org:
         _inject_org_default(spec, org)

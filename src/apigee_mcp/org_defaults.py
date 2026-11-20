@@ -28,6 +28,12 @@ class ApigeeOrgDefaultsMiddleware(Middleware):
         if not isinstance(arguments, dict):
             arguments = {}
             params.arguments = arguments
+        if (
+            "ORG" not in arguments
+            and "ORG__path" not in arguments
+            and "org" in arguments
+        ):
+            arguments["ORG"] = arguments["org"]
         if "ORG" not in arguments and "ORG__path" not in arguments:
             arguments["ORG"] = self._org
         return await call_next(context)
